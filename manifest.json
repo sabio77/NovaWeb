@@ -1,0 +1,10 @@
+{
+  "name": "Nova IA Nube",
+  "short_name": "Nova Nube",
+  "description": "WebApp PWA para conversar con Nova y controlar objetivos desde cualquier dispositivo.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#111827",
+  "icons": []
+}

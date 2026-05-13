@@ -1,0 +1,16 @@
+{
+  "name": "nova-ia-nube-fronted-web",
+  "version": "0.1.0",
+  "description": "WebApp PWA de Nova IA Nube para chat, voz del navegador y control visual del objetivo principal.",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node scripts/static-server.js",
+    "check": "node scripts/check-syntax.js",
+    "check:syntax": "node scripts/check-syntax.js",
+    "validate:production": "node scripts/check-syntax.js",
+    "validate:all": "node scripts/check-syntax.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
