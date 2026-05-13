@@ -2,11 +2,23 @@
   'use strict';
 
   const FIREBASE_VERSION = '10.12.5';
+  const DEFAULT_FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyDJo46f9sCpXTzfE1DTo1dW3-HCDUrs03Q',
+    authDomain: 'xzonev1.firebaseapp.com',
+    projectId: 'xzonev1',
+    storageBucket: 'xzonev1.appspot.com',
+    messagingSenderId: '795659138045',
+    appId: '1:795659138045:web:a9bb48de306b58e8b11f94',
+    measurementId: 'G-RB07J3B04K'
+  };
+
   let firebaseApp = null;
   let firebaseAuth = null;
   let firebaseModules = null;
   let currentUser = null;
   let statusHandler = null;
+  let authChangeHandler = null;
+  let activeConfig = null;
 
   function isLocalDevelopment() {
     const host = window.location.hostname;
@@ -21,11 +33,13 @@
     return getWebEnvironment() === 'production';
   }
 
+  function hasValidFirebaseConfig(config) {
+    return Boolean(config && typeof config === 'object' && config.apiKey && config.authDomain && config.projectId && config.appId);
+  }
+
   function getFirebaseConfig() {
-    const config = window.NOVA_FIREBASE_CONFIG || null;
-    if (!config || typeof config !== 'object') return null;
-    if (!config.apiKey || !config.authDomain || !config.projectId) return null;
-    return config;
+    const configured = window.NOVA_FIREBASE_CONFIG || activeConfig || DEFAULT_FIREBASE_CONFIG;
+    return hasValidFirebaseConfig(configured) ? configured : null;
   }
 
   function emitStatus(message, details) {
@@ -44,16 +58,16 @@
 
   async function init(options) {
     statusHandler = options && options.onStatus;
-    const onAuthChange = options && options.onAuthChange;
+    authChangeHandler = options && options.onAuthChange;
+    if (options && options.firebaseConfig && hasValidFirebaseConfig(options.firebaseConfig)) {
+      activeConfig = options.firebaseConfig;
+      window.NOVA_FIREBASE_CONFIG = options.firebaseConfig;
+    }
+
     const config = getFirebaseConfig();
     if (!config) {
-      emitStatus(
-        isProduction()
-          ? 'Configura Firebase Web para iniciar sesión en producción.'
-          : 'Firebase Web no está configurado. Puedes usar el acceso de desarrollo controlado.',
-        { ready: false, production: isProduction() }
-      );
-      if (typeof onAuthChange === 'function') onAuthChange(null);
+      emitStatus('Nova no encontró la configuración pública de Google.', { ready: false, production: isProduction() });
+      if (typeof authChangeHandler === 'function') authChangeHandler(null);
       return { ready: false, production: isProduction(), reason: 'missing_firebase_config' };
     }
 
@@ -61,28 +75,39 @@
       const { appModule, authModule } = await loadFirebaseModules();
       firebaseApp = firebaseApp || appModule.initializeApp(config);
       firebaseAuth = firebaseAuth || authModule.getAuth(firebaseApp);
-      authModule.onAuthStateChanged(firebaseAuth, (user) => {
+      authModule.onAuthStateChanged(firebaseAuth, async (user) => {
         currentUser = user || null;
-        if (typeof onAuthChange === 'function') onAuthChange(currentUser);
+        if (typeof authChangeHandler === 'function') await authChangeHandler(currentUser);
       });
-      emitStatus('Firebase listo para sesión segura.', { ready: true, production: isProduction() });
+      emitStatus('Google está listo para proteger tu sesión de Nova.', { ready: true, production: isProduction() });
       return { ready: true, production: isProduction() };
     } catch (error) {
-      emitStatus('No fue posible inicializar Firebase Web.', { ready: false, error: error.message });
-      if (typeof onAuthChange === 'function') onAuthChange(null);
+      emitStatus('No fue posible inicializar el acceso con Google.', { ready: false, error: error.message });
+      if (typeof authChangeHandler === 'function') authChangeHandler(null);
       return { ready: false, production: isProduction(), reason: 'firebase_init_failed' };
     }
   }
 
-  async function signInWithEmail(email, password) {
-    if (!firebaseAuth || !firebaseModules) {
-      await init({ onStatus: statusHandler });
+  async function ensureAuthReady() {
+    if (!firebaseAuth || !firebaseModules) await init({ onStatus: statusHandler, onAuthChange: authChangeHandler });
+    if (!firebaseAuth || !firebaseModules) throw new Error('El acceso con Google no está disponible en este momento.');
+  }
+
+  async function signInWithGoogle() {
+    await ensureAuthReady();
+    const provider = new firebaseModules.authModule.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    try {
+      const credential = await firebaseModules.authModule.signInWithPopup(firebaseAuth, provider);
+      currentUser = credential.user;
+      return currentUser;
+    } catch (error) {
+      if (/popup|blocked|closed|cancelled|operation-not-supported/i.test(error.code || error.message || '')) {
+        await firebaseModules.authModule.signInWithRedirect(firebaseAuth, provider);
+        return currentUser;
+      }
+      throw error;
     }
-    if (!firebaseAuth || !firebaseModules) throw new Error('Firebase Web no está configurado para iniciar sesión.');
-    if (!email || !password) throw new Error('Escribe correo y contraseña para iniciar sesión.');
-    const credential = await firebaseModules.authModule.signInWithEmailAndPassword(firebaseAuth, email, password);
-    currentUser = credential.user;
-    return currentUser;
   }
 
   async function signOutSession() {
@@ -102,12 +127,13 @@
 
   window.NovaFirebaseSession = {
     init,
-    signInWithEmail,
+    signInWithGoogle,
     signOut: signOutSession,
     getIdToken,
     getCurrentUser,
     hasConfig: () => Boolean(getFirebaseConfig()),
     isProduction,
-    environment: getWebEnvironment
+    environment: getWebEnvironment,
+    getFirebaseConfig: () => ({ ...(getFirebaseConfig() || {}) })
   };
 }());

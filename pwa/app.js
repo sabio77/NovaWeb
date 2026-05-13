@@ -9,14 +9,48 @@ function readJsonStorage(key, fallback) {
   }
 }
 
+
+const DEFAULT_NOVA_BACKEND_URL = 'https://backendnova-2yx4.onrender.com';
+const DEFAULT_FIREBASE_WEB_CONFIG = {
+  apiKey: 'AIzaSyDJo46f9sCpXTzfE1DTo1dW3-HCDUrs03Q',
+  authDomain: 'xzonev1.firebaseapp.com',
+  projectId: 'xzonev1',
+  storageBucket: 'xzonev1.appspot.com',
+  messagingSenderId: '795659138045',
+  appId: '1:795659138045:web:a9bb48de306b58e8b11f94',
+  measurementId: 'G-RB07J3B04K'
+};
+
+function isLocalNovaDevelopment() {
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local');
+}
+
+function enforceProductionAutolinkDefaults() {
+  if (isLocalNovaDevelopment()) return;
+  localStorage.removeItem('nova.backendUrl');
+  localStorage.removeItem('nova.authToken');
+}
+
+function initialBackendUrl() {
+  if (isLocalNovaDevelopment()) return localStorage.getItem('nova.backendUrl') || DEFAULT_NOVA_BACKEND_URL;
+  return DEFAULT_NOVA_BACKEND_URL;
+}
+
+function initialAuthToken() {
+  return isLocalNovaDevelopment() ? (localStorage.getItem('nova.authToken') || '') : '';
+}
+
 function readTrackedOrders() {
   const parsed = readJsonStorage('nova.trackedOrders', []);
   return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 8) : [];
 }
 
+enforceProductionAutolinkDefaults();
+
 const state = {
-  backendUrl: localStorage.getItem('nova.backendUrl') || 'http://localhost:10000',
-  authToken: localStorage.getItem('nova.authToken') || '',
+  backendUrl: initialBackendUrl(),
+  authToken: initialAuthToken(),
   firebaseReady: false,
   firebaseUser: null,
   devices: [],
@@ -26,7 +60,9 @@ const state = {
   trackedOrders: readTrackedOrders(),
   projectEventClient: null,
   projectEventKeys: new Set(),
-  lastProjectStatus: null
+  lastProjectStatus: null,
+  bootstrap: null,
+  publicUser: null
 };
 
 const API_TIMEOUT_MS = 15000;
@@ -52,13 +88,21 @@ function shouldRetryRequest({ method, response, error, attempt, maxAttempts }) {
 const backendUrlInput = document.getElementById('backendUrl');
 const authTokenInput = document.getElementById('authToken');
 const loginForm = document.getElementById('loginForm');
-const loginEmail = document.getElementById('loginEmail');
-const loginPassword = document.getElementById('loginPassword');
 const loginButton = document.getElementById('loginButton');
 const logoutButton = document.getElementById('logoutButton');
 const devTokenPanel = document.getElementById('devTokenPanel');
 const connectionStatus = document.getElementById('connectionStatus');
 const sessionStatus = document.getElementById('sessionStatus');
+
+const publicLanding = document.getElementById('publicLanding');
+const appShell = document.getElementById('appShell');
+const publicSignInGoogle = document.getElementById('publicSignInGoogle');
+const publicCreateGoogle = document.getElementById('publicCreateGoogle');
+const heroCreateGoogle = document.getElementById('heroCreateGoogle');
+const heroSignInGoogle = document.getElementById('heroSignInGoogle');
+const accountName = document.getElementById('accountName');
+const accountEmail = document.getElementById('accountEmail');
+const accountPhoto = document.getElementById('accountPhoto');
 const messages = document.getElementById('messages');
 const messageInput = document.getElementById('messageInput');
 const chatContextTitle = document.getElementById('chatContextTitle');
@@ -103,13 +147,34 @@ const chatInterface = window.NovaChatInterface
   ? window.NovaChatInterface.create({ messagesElement: messages })
   : null;
 
+const novaHeroAvatar = window.NovaAvatar ? window.NovaAvatar.mount('webHero', '#webHeroAvatar', { mode: 'idle' }) : null;
+const novaDashboardAvatar = window.NovaAvatar ? window.NovaAvatar.mount('webDashboard', '#webDashboardAvatar', { mode: 'idle' }) : null;
+
+function setNovaAvatarMode(mode, message) {
+  if (window.NovaAvatar) window.NovaAvatar.setMode(mode, message);
+}
+
+function speakNovaIfPossible(text, endMode = 'idle') {
+  if (!window.NovaAvatar) return false;
+  const previousMode = typeof window.NovaAvatar.getMode === 'function' ? window.NovaAvatar.getMode() : 'idle';
+  return window.NovaAvatar.speak(text, { endMode, previousMode });
+}
+
+
 function cleanBackendUrl() {
   return String(state.backendUrl || '').replace(/\/$/, '');
 }
 
+function getRuntimeWebEnvironment() {
+  if (window.NovaFirebaseSession && typeof window.NovaFirebaseSession.environment === 'function') {
+    return String(window.NovaFirebaseSession.environment() || '').toLowerCase();
+  }
+  return String(window.NOVA_WEB_ENV || (isLocalNovaDevelopment() ? 'development' : 'production')).toLowerCase();
+}
+
 function isDevelopmentFallbackAllowed() {
-  if (!window.NovaFirebaseSession) return true;
-  return !window.NovaFirebaseSession.isProduction();
+  const environment = getRuntimeWebEnvironment();
+  return environment !== 'production' && isLocalNovaDevelopment();
 }
 
 function setText(element, text) {
@@ -122,6 +187,58 @@ function setConnectionStatus(text) {
 
 function setSessionStatus(text) {
   setText(sessionStatus, text);
+}
+
+function renderAuthGate() {
+  const user = state.firebaseUser || null;
+  const isLoggedIn = Boolean(user);
+  if (publicLanding) publicLanding.hidden = isLoggedIn;
+  if (appShell) appShell.hidden = !isLoggedIn;
+  document.querySelectorAll('.authenticated-area').forEach((element) => { element.hidden = !isLoggedIn; });
+  if (accountName) accountName.textContent = user ? (user.displayName || 'Cuenta Nova') : 'Cuenta conectada';
+  if (accountEmail) accountEmail.textContent = user ? (user.email || 'Sesión segura activa') : 'Sesión segura activa.';
+  if (accountPhoto) {
+    if (user && user.photoURL) {
+      accountPhoto.src = user.photoURL;
+      accountPhoto.hidden = false;
+    } else {
+      accountPhoto.hidden = true;
+      accountPhoto.removeAttribute('src');
+    }
+  }
+  setNovaAvatarMode(isLoggedIn ? 'idle' : 'idle');
+}
+
+async function loadPublicBootstrap() {
+  const fallback = { backendUrl: DEFAULT_NOVA_BACKEND_URL, firebaseClientConfig: DEFAULT_FIREBASE_WEB_CONFIG, productName: 'Nova IA Nube' };
+  try {
+    const response = await fetch(`${DEFAULT_NOVA_BACKEND_URL}/api/v1/public/bootstrap`, { headers: { 'X-Request-Id': createRequestId('web-bootstrap') } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.ok === false) throw new Error('Bootstrap no disponible.');
+    const data = payload.data || {};
+    state.bootstrap = data;
+    state.backendUrl = data.backendUrl || DEFAULT_NOVA_BACKEND_URL;
+    window.NOVA_FIREBASE_CONFIG = data.firebaseClientConfig || DEFAULT_FIREBASE_WEB_CONFIG;
+    if (backendUrlInput) backendUrlInput.value = state.backendUrl;
+    return data;
+  } catch (_) {
+    state.bootstrap = fallback;
+    state.backendUrl = fallback.backendUrl;
+    window.NOVA_FIREBASE_CONFIG = fallback.firebaseClientConfig;
+    if (backendUrlInput) backendUrlInput.value = state.backendUrl;
+    return fallback;
+  }
+}
+
+async function loadSessionProfile() {
+  try {
+    const data = await apiFetch('/api/v1/auth/me', { maxAttempts: 1, timeoutMs: 9000 });
+    state.publicUser = data.user || null;
+    if (state.publicUser && accountName) accountName.textContent = state.publicUser.displayName || accountName.textContent;
+    if (state.publicUser && accountEmail) accountEmail.textContent = state.publicUser.email || accountEmail.textContent;
+  } catch (_) {
+    state.publicUser = null;
+  }
 }
 
 function hasApiSession() {
@@ -998,23 +1115,31 @@ function updateDevelopmentTokenVisibility() {
 
 async function initializeFirebaseSession() {
   updateDevelopmentTokenVisibility();
+  renderAuthGate();
   if (!window.NovaFirebaseSession) {
-    setSessionStatus('Firebase Web no cargado');
+    setSessionStatus('Google no está disponible en este navegador.');
     return;
   }
   const result = await window.NovaFirebaseSession.init({
+    firebaseConfig: (state.bootstrap && state.bootstrap.firebaseClientConfig) || DEFAULT_FIREBASE_WEB_CONFIG,
     onStatus: (message) => setSessionStatus(message),
     onAuthChange: async (user) => {
       state.firebaseUser = user || null;
+      renderAuthGate();
       if (user) {
         state.authToken = await window.NovaFirebaseSession.getIdToken(false);
         localStorage.removeItem('nova.authToken');
         if (authTokenInput) authTokenInput.value = '';
         setSessionStatus(`Sesión activa: ${user.email || 'usuario verificado'}`);
+        setNovaAvatarMode('idle', 'Nova está lista para trabajar en tus proyectos.');
+        await loadSessionProfile();
         await refreshAuthenticatedPanels();
       } else {
         state.authToken = isDevelopmentFallbackAllowed() ? (localStorage.getItem('nova.authToken') || '') : '';
-        setSessionStatus(state.authToken ? 'Sesión de desarrollo activa' : 'Sesión pendiente');
+        setSessionStatus(state.authToken ? 'Sesión de desarrollo activa' : 'Inicia sesión con Google para continuar.');
+        if (window.NovaAvatar) window.NovaAvatar.stopSpeaking('idle');
+        renderProjects([]);
+        renderDevices([]);
       }
     }
   });
@@ -1023,8 +1148,8 @@ async function initializeFirebaseSession() {
 }
 
 async function saveManualConnection() {
-  state.backendUrl = backendUrlInput.value.trim();
-  localStorage.setItem('nova.backendUrl', state.backendUrl);
+  state.backendUrl = backendUrlInput ? backendUrlInput.value.trim() : state.backendUrl;
+  if (isDevelopmentFallbackAllowed()) localStorage.setItem('nova.backendUrl', state.backendUrl);
   if (isDevelopmentFallbackAllowed() && authTokenInput) {
     state.authToken = authTokenInput.value.trim();
     if (state.authToken) localStorage.setItem('nova.authToken', state.authToken);
@@ -1036,28 +1161,45 @@ async function saveManualConnection() {
   await refreshAuthenticatedPanels();
 }
 
-backendUrlInput.value = state.backendUrl;
+if (backendUrlInput) backendUrlInput.value = state.backendUrl;
 if (authTokenInput) authTokenInput.value = state.authToken;
 if (pcFileName) pcFileName.value = 'reports/respuesta.txt';
+
+async function signInWithGoogleFromUi() {
+  if (!window.NovaFirebaseSession || !window.NovaFirebaseSession.hasConfig()) {
+    throw new Error('El acceso con Google no está disponible en este momento.');
+  }
+  setNovaAvatarMode('thinking', 'Nova está abriendo el acceso seguro con Google.');
+  await window.NovaFirebaseSession.signInWithGoogle();
+}
 
 if (loginForm) {
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    loginButton.disabled = true;
+    if (loginButton) loginButton.disabled = true;
     try {
-      state.backendUrl = backendUrlInput.value.trim();
-      localStorage.setItem('nova.backendUrl', state.backendUrl);
-      if (!window.NovaFirebaseSession || !window.NovaFirebaseSession.hasConfig()) {
-        if (!isDevelopmentFallbackAllowed()) throw new Error('Configura window.NOVA_FIREBASE_CONFIG para iniciar sesión en producción.');
-        throw new Error('Firebase Web no está configurado. Usa el acceso de desarrollo solo en entorno local.');
-      }
-      await window.NovaFirebaseSession.signInWithEmail(loginEmail.value.trim(), loginPassword.value);
-      loginPassword.value = '';
+      await signInWithGoogleFromUi();
     } catch (error) {
+      setNovaAvatarMode('error', 'Nova necesita tu atención.');
       setSessionStatus(error.message);
       addMessage('assistant', error.message);
     } finally {
-      loginButton.disabled = false;
+      if (loginButton) loginButton.disabled = false;
+    }
+  });
+}
+
+for (const button of [publicSignInGoogle, publicCreateGoogle, heroCreateGoogle, heroSignInGoogle]) {
+  if (!button) continue;
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await signInWithGoogleFromUi();
+    } catch (error) {
+      setNovaAvatarMode('error', 'Nova necesita tu atención.');
+      setSessionStatus(error.message);
+    } finally {
+      button.disabled = false;
     }
   });
 }
@@ -1074,6 +1216,8 @@ if (logoutButton) {
       renderProjects([]);
       renderDevices([]);
       setSessionStatus('Sesión cerrada');
+      if (window.NovaAvatar) window.NovaAvatar.stopSpeaking('idle');
+      renderAuthGate();
       addMessage('assistant', 'Sesión cerrada. Tus proyectos volverán a mostrarse al iniciar sesión.');
     } catch (error) {
       addMessage('assistant', error.message);
@@ -1204,6 +1348,7 @@ document.getElementById('chatForm').addEventListener('submit', async (event) => 
   }
   messageInput.value = '';
   addMessage('user', message);
+  setNovaAvatarMode('thinking');
   try {
     const data = await sendMessage(message);
     if (data.conversationKey) {
@@ -1211,12 +1356,14 @@ document.getElementById('chatForm').addEventListener('submit', async (event) => 
       localStorage.setItem('nova.activeConversationKey', data.conversationKey);
     }
     addMessage('assistant', data.message);
+    speakNovaIfPossible(data.message, 'idle');
     renderGovernance(data.governance);
     renderContinuity(data.governance);
     renderFinalValidation(data.governance);
     renderPcOrderGuidance(data.pcOrder);
     refreshActiveProject({ silent: true }).catch(() => {});
   } catch (error) {
+    setNovaAvatarMode('error', 'Nova necesita tu atención.');
     addMessage('assistant', error.message);
   }
 });
@@ -1230,8 +1377,15 @@ document.getElementById('voiceButton').addEventListener('click', () => {
   const recognition = new Recognition();
   recognition.lang = 'es-ES';
   recognition.interimResults = false;
+  let recognitionFailed = false;
+  recognition.onstart = () => setNovaAvatarMode('listening');
+  recognition.onend = () => { if (!recognitionFailed) setNovaAvatarMode('idle'); };
   recognition.onresult = (event) => { messageInput.value = event.results[0][0].transcript; };
-  recognition.onerror = () => addMessage('assistant', 'No pude escuchar con claridad. Intenta de nuevo o escribe tu solicitud.');
+  recognition.onerror = () => {
+    recognitionFailed = true;
+    setNovaAvatarMode('error', 'Nova no pudo escuchar con claridad.');
+    addMessage('assistant', 'No pude escuchar con claridad. Intenta de nuevo o escribe tu solicitud.');
+  };
   recognition.start();
 });
 
@@ -1239,13 +1393,21 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./service-worker.js').catch(() => {});
 }
 
-initializeFirebaseSession().catch((error) => setSessionStatus(error.message));
-checkHealth();
-refreshDevices().catch(() => {});
-refreshProjects().catch(() => {});
-refreshContinuity().catch(() => {});
-refreshFinalValidation().catch(() => {});
-refreshProductionActivation().catch(() => {});
-refreshTrackedOrders().catch(() => {});
-setInterval(() => { refreshTrackedOrders().catch(() => {}); }, 7000);
-addMessage('assistant', 'Hola, soy Nova IA Nube. Crea o abre un proyecto para trabajar con conversación, costos y órdenes PC completamente separados.');
+async function bootNovaWeb() {
+  renderAuthGate();
+  await loadPublicBootstrap();
+  await initializeFirebaseSession();
+  await checkHealth();
+  if (state.firebaseUser || state.authToken) {
+    refreshDevices().catch(() => {});
+    refreshProjects().catch(() => {});
+    refreshContinuity().catch(() => {});
+    refreshFinalValidation().catch(() => {});
+    refreshProductionActivation().catch(() => {});
+    refreshTrackedOrders().catch(() => {});
+  }
+  setInterval(() => { if (state.firebaseUser || state.authToken) refreshTrackedOrders().catch(() => {}); }, 7000);
+  addMessage('assistant', 'Hola, soy Nova IA Nube. Crea o abre un proyecto para trabajar con conversación, costos y órdenes PC completamente separados.');
+}
+
+bootNovaWeb().catch((error) => setSessionStatus(error.message));

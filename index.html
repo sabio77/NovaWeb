@@ -3,56 +3,101 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#eef6ff">
   <title>Nova IA Nube</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="pwa/styles.css">
 </head>
 <body>
-  <main class="app-shell">
-    <header class="topbar">
+  <section id="publicLanding" class="landing-shell" aria-label="Presentación de Nova IA Nube">
+    <nav class="landing-nav">
+      <strong class="brand-mark">Nova IA Nube</strong>
+      <div class="landing-links">
+        <a href="#ventajas">Ventajas</a>
+        <a href="#como-funciona">Cómo funciona</a>
+        <a href="#seguridad">Seguridad</a>
+        <button id="publicSignInGoogle" type="button" class="button-secondary">Iniciar sesión</button>
+        <button id="publicCreateGoogle" type="button">Crear cuenta</button>
+      </div>
+    </nav>
+    <div class="landing-hero">
+      <div class="landing-hero__copy">
+        <p class="eyebrow">Automatización cloud-first</p>
+        <h1>Tu IA de proyectos conectada con tu PC, sin configuración técnica.</h1>
+        <p>Nova IA Nube organiza conversaciones, ejecuciones, costos y entregables por proyecto. Inicia sesión con Google, abre tu espacio personal y vincula tu PC automáticamente con la misma cuenta.</p>
+        <div class="landing-cta-row">
+          <button id="heroCreateGoogle" type="button">Crear cuenta con Google</button>
+          <button id="heroSignInGoogle" type="button" class="button-secondary">Iniciar sesión</button>
+        </div>
+        <p class="trust-line">Tus proyectos, rutas locales y órdenes seguras quedan separados por cuenta.</p>
+      </div>
+      <div class="landing-hero__avatar" id="webHeroAvatar"></div>
+    </div>
+    <div id="ventajas" class="landing-cards">
+      <article><strong>Un espacio para cada proyecto</strong><span>Chats, ejecuciones, artefactos y costos se mantienen aislados.</span></article>
+      <article><strong>PC vinculado automáticamente</strong><span>El agente local se conecta con tu cuenta Google y registra el dispositivo en backend.</span></article>
+      <article><strong>Entregas locales seguras</strong><span>Nova escribe archivos únicamente dentro de rutas controladas por proyecto.</span></article>
+      <article><strong>Trazabilidad desde backend</strong><span>La identidad se verifica con Firebase Admin y las acciones quedan reportadas.</span></article>
+    </div>
+    <div id="como-funciona" class="landing-section">
+      <h2>Cómo funciona</h2>
+      <div class="step-grid">
+        <span>1. Inicia sesión con Google.</span>
+        <span>2. Crea o abre un proyecto.</span>
+        <span>3. Vincula tu PC con la misma cuenta.</span>
+        <span>4. Nova ejecuta órdenes autorizadas y separadas.</span>
+      </div>
+    </div>
+    <div id="seguridad" class="landing-section landing-section--security">
+      <h2>Seguridad y control</h2>
+      <p>El backend verifica tu identidad, el agente PC solo ejecuta órdenes autorizadas y cada proyecto usa una carpeta local independiente para evitar mezclar entregas.</p>
+    </div>
+  </section>
+
+  <main id="appShell" class="app-shell" hidden>
+    <header class="topbar authenticated-area">
       <div>
         <p class="eyebrow">Nova IA Nube</p>
         <h1>Proyectos con IA, PC vinculado y ejecución segura</h1>
         <p class="topbar-subtitle">Gestiona varios proyectos desde una sola cuenta sin mezclar conversaciones, órdenes locales ni costos.</p>
       </div>
       <div class="topbar-status">
+        <div id="webDashboardAvatar" class="dashboard-avatar"></div>
         <span id="connectionStatus" class="status-pill">Sin conectar</span>
         <span id="sessionStatus" class="status-pill status-pill--muted">Sesión pendiente</span>
       </div>
     </header>
 
-    <section class="setup-card session-card" aria-labelledby="sessionTitle">
+    <section class="setup-card session-card authenticated-area" aria-labelledby="sessionTitle">
       <div class="session-card__copy">
-        <p class="eyebrow">Conexión segura</p>
-        <h2 id="sessionTitle">Inicia sesión para trabajar con tus proyectos</h2>
-        <p class="helper-text">La sesión usa Firebase en el navegador y envía el token ID al backend. En producción no se usan tokens pegados manualmente.</p>
+        <p class="eyebrow">Cuenta protegida</p>
+        <h2 id="sessionTitle">Tu espacio personal de Nova IA Nube</h2>
+        <p class="helper-text">El acceso se mantiene con Google. Nova usa el token temporal de Firebase para validar tu identidad en backendRENDER.</p>
       </div>
-      <label>Backend de Nova
-        <input id="backendUrl" placeholder="https://tu-backend.onrender.com" autocomplete="url">
-      </label>
-      <form id="loginForm" class="login-form">
-        <label>Correo
-          <input id="loginEmail" type="email" placeholder="tu@correo.com" autocomplete="email">
-        </label>
-        <label>Contraseña
-          <input id="loginPassword" type="password" placeholder="Contraseña de tu cuenta" autocomplete="current-password">
-        </label>
-        <div class="session-actions">
-          <button id="loginButton" type="submit">Iniciar sesión</button>
-          <button id="logoutButton" type="button" class="button-secondary">Cerrar sesión</button>
-          <button id="saveConnection" type="button" class="button-secondary">Actualizar conexión</button>
+      <div class="account-card" aria-live="polite">
+        <img id="accountPhoto" class="account-photo" alt="Foto de la cuenta" hidden>
+        <div>
+          <strong id="accountName">Cuenta conectada</strong>
+          <p id="accountEmail" class="helper-text">Sesión segura activa.</p>
         </div>
+      </div>
+      <form id="loginForm" class="login-form">
+        <button id="loginButton" type="submit">Continuar con Google</button>
+        <button id="logoutButton" type="button" class="button-secondary">Cerrar sesión</button>
       </form>
       <details id="devTokenPanel" class="dev-token-panel">
-        <summary>Acceso de desarrollo controlado</summary>
-        <label>Token de sesión temporal
-          <input id="authToken" type="password" placeholder="Disponible solo fuera de producción">
+        <summary>Diagnóstico local de desarrollo</summary>
+        <label>Backend de Nova
+          <input id="backendUrl" placeholder="https://backendnova-2yx4.onrender.com" autocomplete="url">
         </label>
+        <label>Token temporal de desarrollo
+          <input id="authToken" type="password" placeholder="Solo disponible fuera de producción">
+        </label>
+        <button id="saveConnection" type="button" class="button-secondary">Actualizar diagnóstico</button>
       </details>
     </section>
 
-    <section class="projects-panel" id="projectsPanel">
+    <section class="projects-panel authenticated-area" id="projectsPanel">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Proyectos</p>
@@ -139,7 +184,7 @@
       </article>
     </section>
 
-    <section class="dashboard">
+    <section class="dashboard authenticated-area">
       <article class="panel">
         <h2>Estado del objetivo principal</h2>
         <div id="governanceBox" class="governance-box">Cuando Nova procese un objetivo principal, verás aquí su etapa, avance y decisión recomendada.</div>
@@ -173,7 +218,7 @@
       </article>
     </section>
 
-    <section class="chat-panel">
+    <section class="chat-panel authenticated-area">
       <div class="chat-panel__header">
         <div>
           <p class="eyebrow">Chat de proyecto</p>
@@ -189,19 +234,8 @@
       </form>
     </section>
   </main>
-  <script>
-    window.NOVA_WEB_ENV = 'production';
-    window.NOVA_FIREBASE_CONFIG = {
-      apiKey: "AIzaSyDJo46f9sCpXTzfE1DTo1dW3-HCDUrs03Q",
-      authDomain: "xzonev1.firebaseapp.com",
-      projectId: "xzonev1",
-      storageBucket: "xzonev1.appspot.com",
-      messagingSenderId: "795659138045",
-      appId: "1:795659138045:web:a9bb48de306b58e8b11f94",
-      measurementId: "G-RB07J3B04K"
-    };
-</script>
   <script src="components/chatInterface.js"></script>
+  <script src="components/novaAvatar.js"></script>
   <script src="pwa/firebaseSession.js"></script>
   <script src="pwa/projectEvents.js"></script>
   <script src="pwa/app.js"></script>
